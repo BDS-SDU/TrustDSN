@@ -26,4 +26,5 @@ Then you get Deal CIDs.
 
 ```shell
 ./lotus client deal [dataCid miner price duration]
+# For example, ./lotus client deal bafylfkjaldfkjasldjflas t01000 0.0026 518400
 ```
