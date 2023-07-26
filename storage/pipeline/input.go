@@ -2,12 +2,15 @@ package sealing
 
 import (
 	"context"
+	"os"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
+	"github.com/docker/go-units"
 	"github.com/filecoin-project/go-commp-utils/zerocomm"
 	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -163,6 +166,11 @@ func (m *Sealing) handleAddPiece(ctx statemachine.Context, sector SectorInfo) er
 	if err != nil {
 		return err
 	}
+	before, delta := .0, .0
+
+	for _, piece := range sector.Pieces {
+		before += float64(piece.Piece.Size)
+	}
 
 	res := SectorPieceAdded{}
 
@@ -267,6 +275,14 @@ func (m *Sealing) handleAddPiece(ctx statemachine.Context, sector SectorInfo) er
 			DealInfo: &deal.deal,
 		})
 	}
+	for _, piece := range res.NewPieces {
+		delta += float64(piece.Piece.Size)
+	}
+	f, _ := os.Create("storage_cost_sector" + strconv.Itoa(int(sector.SectorNumber)) + "_total_piece" + strconv.Itoa(len(sector.Pieces)))
+	defer f.Close()
+	f.WriteString("total stored before add piece:" + units.BytesSize(before) + "\n")
+	f.WriteString("total stored after add piece:" + units.BytesSize(before+delta) + "\n")
+	f.WriteString("storage diff in sector:" + units.BytesSize(delta) + "\n")
 
 	return ctx.Send(res)
 }
