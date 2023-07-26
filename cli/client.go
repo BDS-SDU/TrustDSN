@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/filecoin-project/lotus/lib/dyaic"
+	"github.com/klauspost/reedsolomon"
 	"io"
+	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
@@ -110,6 +112,163 @@ var clientCmd = &cli.Command{
 		WithCategory("util", clientListTransfers),
 		WithCategory("util", clientRestartTransfer),
 		WithCategory("util", clientCancelTransfer),
+		WithCategory("util", clientEcEncode),
+		WithCategory("util", clientEcDecode),
+	},
+}
+
+var clientEcEncode = &cli.Command{
+	Name:      "encode",
+	Usage:     "EC encode file",
+	ArgsUsage: "[inputPath]",
+	Flags: []cli.Flag{
+		&cli.IntFlag{
+			Name:  "k",
+			Value: 10,
+			Usage: "parameter K of RS-code",
+		},
+		&cli.IntFlag{
+			Name:  "m",
+			Value: 3,
+			Usage: "parameter M of RS-code",
+		},
+	},
+	Action: func(cctx *cli.Context) error {
+		if cctx.NArg() != 1 {
+			return IncorrectNumArgs(cctx)
+		}
+
+		// Read file
+		absPath, err := filepath.Abs(cctx.Args().First())
+		if err != nil {
+			return err
+		}
+		fmt.Println("Opening", absPath)
+		f, err := ioutil.ReadFile(absPath)
+		if err != nil {
+			return err
+		}
+
+		// Create encoding matrix
+		dataShards := cctx.Int("k")
+		parShards := cctx.Int("m")
+		enc, err := reedsolomon.New(dataShards, parShards)
+		if err != nil {
+			return err
+		}
+
+		shards, err := enc.Split(f)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("File split into %d data+parity shards with %d bytes/shard.\n", len(shards), len(shards[0]))
+
+		// Encode parity
+		err = enc.Encode(shards)
+		if err != nil {
+			return err
+		}
+
+		// Write out the resulting files.
+		dir, file := filepath.Split(absPath)
+		for i, shard := range shards {
+			outfn := fmt.Sprintf("%s.%d", file, i)
+
+			fmt.Println("Writing to", outfn)
+			err = ioutil.WriteFile(filepath.Join(dir, outfn), shard, 0644)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	},
+}
+
+var clientEcDecode = &cli.Command{
+	Name:      "decode",
+	Usage:     "EC decode file",
+	ArgsUsage: "[inputPath]",
+	Flags: []cli.Flag{
+		&cli.IntFlag{
+			Name:  "k",
+			Value: 10,
+			Usage: "parameter K of RS code",
+		},
+		&cli.IntFlag{
+			Name:  "m",
+			Value: 3,
+			Usage: "parameter M of RS code",
+		},
+		&cli.StringFlag{
+			Name:  "out",
+			Usage: "Alternative output path",
+		},
+	},
+	Action: func(cctx *cli.Context) error {
+		if cctx.NArg() != 1 {
+			return IncorrectNumArgs(cctx)
+		}
+
+		// Create encoding matrix
+		dataShards := cctx.Int("k")
+		parShards := cctx.Int("m")
+		enc, err := reedsolomon.New(dataShards, parShards)
+		if err != nil {
+			return err
+		}
+
+		// Create shards and load the data
+		absPath, err := filepath.Abs(cctx.Args().First())
+		if err != nil {
+			return err
+		}
+		shards := make([][]byte, dataShards+parShards)
+		for i := range shards {
+			infn := fmt.Sprintf("%s.%d", absPath, i)
+			fmt.Println("Opening", infn)
+			shards[i], err = ioutil.ReadFile(infn)
+			if err != nil {
+				fmt.Println("Error reading file", err)
+				shards[i] = nil
+			}
+		}
+
+		// Verify the shards
+		ok, err := enc.Verify(shards)
+		if ok {
+			fmt.Println("No reconstruction needed")
+		} else {
+			fmt.Println("Verification failed. Reconstructing data")
+			err = enc.Reconstruct(shards)
+			if err != nil {
+				return err
+			}
+			ok, err = enc.Verify(shards)
+			if !ok {
+				fmt.Println("Verification failed after reconstruction, data likely corrpted.")
+				return err
+			}
+		}
+
+		// Join the shards and write them
+		outFile := cctx.String("out")
+		if outFile == "" {
+			outFile = absPath
+		}
+
+		fmt.Println("Writing data to", outFile)
+		f, err := os.Create(outFile)
+		if err != nil {
+			return err
+		}
+
+		// We don't know the exact filesize. ?
+		err = enc.Join(f, shards, len(shards[0])*dataShards)
+		if err != nil {
+			return err
+		}
+
+		return nil
 	},
 }
 
