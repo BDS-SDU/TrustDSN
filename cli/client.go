@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/filecoin-project/lotus/lib/dyaic"
 	"github.com/klauspost/reedsolomon"
+	"github.com/zhuaiballl/homohash"
 	"io"
 	"io/ioutil"
 	"math"
@@ -114,6 +115,7 @@ var clientCmd = &cli.Command{
 		WithCategory("util", clientCancelTransfer),
 		WithCategory("util", clientEcEncode),
 		WithCategory("util", clientEcDecode),
+		WithCategory("storage", clientEcSend),
 	},
 }
 
@@ -163,11 +165,39 @@ var clientEcEncode = &cli.Command{
 		}
 		fmt.Printf("File split into %d data+parity shards with %d bytes/shard.\n", len(shards), len(shards[0]))
 
+		ho := homohash.New()
+		hashes := make([][]byte, len(shards))
+		for i, shard := range shards {
+			ho.Reset()
+			hashes[i] = make([]byte, 32)
+			ho.Write(shard)
+			copy(hashes[i], ho.Sum(nil))
+		}
+		fmt.Println()
+
+		err = enc.Encode(hashes)
+		if err != nil {
+			return err
+		}
+		fmt.Println("Encoded hashes: ")
+		for _, hash := range hashes {
+			fmt.Print(hash, " ")
+		}
+		fmt.Println()
+
 		// Encode parity
 		err = enc.Encode(shards)
 		if err != nil {
 			return err
 		}
+
+		fmt.Println("Hashes of encoded shards: ")
+		for _, shard := range shards {
+			ho.Reset()
+			ho.Write(shard)
+			fmt.Print(ho.Sum(nil), " ")
+		}
+		fmt.Println()
 
 		// Write out the resulting files.
 		dir, file := filepath.Split(absPath)
@@ -267,6 +297,167 @@ var clientEcDecode = &cli.Command{
 		if err != nil {
 			return err
 		}
+
+		return nil
+	},
+}
+
+var clientEcSend = &cli.Command{
+	Name:      "ecsend",
+	Usage:     "",
+	ArgsUsage: "",
+	Flags:     []cli.Flag{},
+	Action: func(cctx *cli.Context) error {
+		expectedArgsMsg := "expected 4 args: dataCid, miner, price, duration"
+
+		if !cctx.Args().Present() {
+			if cctx.Bool("manual-stateless-deal") {
+				return xerrors.New("--manual-stateless-deal can not be combined with interactive deal mode: you must specify the " + expectedArgsMsg)
+			}
+			return interactiveDeal(cctx)
+		}
+
+		api, closer, err := GetFullNodeAPI(cctx)
+		if err != nil {
+			return err
+		}
+		defer closer()
+		ctx := ReqContext(cctx)
+		afmt := NewAppFmt(cctx.App)
+
+		if cctx.NArg() != 4 {
+			return IncorrectNumArgs(cctx)
+		}
+
+		// [data, miner, price, dur]
+
+		data, err := cid.Parse(cctx.Args().Get(0))
+		if err != nil {
+			return err
+		}
+
+		miner, err := address.NewFromString(cctx.Args().Get(1))
+		if err != nil {
+			return err
+		}
+
+		price, err := types.ParseFIL(cctx.Args().Get(2))
+		if err != nil {
+			return err
+		}
+
+		dur, err := strconv.ParseInt(cctx.Args().Get(3), 10, 32)
+		if err != nil {
+			return err
+		}
+
+		var provCol big.Int
+		if pcs := cctx.String("provider-collateral"); pcs != "" {
+			pc, err := big.FromString(pcs)
+			if err != nil {
+				return fmt.Errorf("failed to parse provider-collateral: %w", err)
+			}
+			provCol = pc
+		}
+
+		if abi.ChainEpoch(dur) < build.MinDealDuration {
+			return xerrors.Errorf("minimum deal duration is %d blocks", build.MinDealDuration)
+		}
+		if abi.ChainEpoch(dur) > build.MaxDealDuration {
+			return xerrors.Errorf("maximum deal duration is %d blocks", build.MaxDealDuration)
+		}
+
+		var a address.Address
+		if from := cctx.String("from"); from != "" {
+			faddr, err := address.NewFromString(from)
+			if err != nil {
+				return xerrors.Errorf("failed to parse 'from' address: %w", err)
+			}
+			a = faddr
+		} else {
+			def, err := api.WalletDefaultAddress(ctx)
+			if err != nil {
+				return err
+			}
+			a = def
+		}
+
+		ref := &storagemarket.DataRef{
+			TransferType: storagemarket.TTGraphsync,
+			Root:         data,
+		}
+
+		if mpc := cctx.String("manual-piece-cid"); mpc != "" {
+			c, err := cid.Parse(mpc)
+			if err != nil {
+				return xerrors.Errorf("failed to parse provided manual piece cid: %w", err)
+			}
+
+			ref.PieceCid = &c
+
+			psize := cctx.Int64("manual-piece-size")
+			if psize == 0 {
+				return xerrors.Errorf("must specify piece size when manually setting cid")
+			}
+
+			ref.PieceSize = abi.UnpaddedPieceSize(psize)
+
+			ref.TransferType = storagemarket.TTManual
+		}
+
+		// Check if the address is a verified client
+		dcap, err := api.StateVerifiedClientStatus(ctx, a, types.EmptyTSK)
+		if err != nil {
+			return err
+		}
+
+		isVerified := dcap != nil
+
+		// If the user has explicitly set the --verified-deal flag
+		if cctx.IsSet("verified-deal") {
+			// If --verified-deal is true, but the address is not a verified
+			// client, return an error
+			verifiedDealParam := cctx.Bool("verified-deal")
+			if verifiedDealParam && !isVerified {
+				return xerrors.Errorf("address %s does not have verified client status", a)
+			}
+
+			// Override the default
+			isVerified = verifiedDealParam
+		}
+
+		sdParams := &lapi.StartDealParams{
+			Data:               ref,
+			Wallet:             a,
+			Miner:              miner,
+			EpochPrice:         types.BigInt(price),
+			MinBlocksDuration:  uint64(dur),
+			DealStartEpoch:     abi.ChainEpoch(cctx.Int64("start-epoch")),
+			FastRetrieval:      cctx.Bool("fast-retrieval"),
+			VerifiedDeal:       isVerified,
+			ProviderCollateral: provCol,
+		}
+
+		var proposal *cid.Cid
+		if cctx.Bool("manual-stateless-deal") {
+			if ref.TransferType != storagemarket.TTManual || price.Int64() != 0 {
+				return xerrors.New("when manual-stateless-deal is enabled, you must also provide a 'price' of 0 and specify 'manual-piece-cid' and 'manual-piece-size'")
+			}
+			proposal, err = api.ClientStatelessDeal(ctx, sdParams)
+		} else {
+			proposal, err = api.ClientStartDeal(ctx, sdParams)
+		}
+
+		if err != nil {
+			return err
+		}
+
+		encoder, err := GetCidEncoder(cctx)
+		if err != nil {
+			return err
+		}
+
+		afmt.Println(encoder.Encode(*proposal))
 
 		return nil
 	},

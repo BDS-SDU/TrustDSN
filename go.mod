@@ -110,6 +110,7 @@ require (
 	github.com/ipld/go-ipld-prime v0.17.0
 	github.com/ipld/go-ipld-selector-text-lite v0.0.1
 	github.com/kelseyhightower/envconfig v1.4.0
+	github.com/klauspost/reedsolomon v1.11.8
 	github.com/koalacxr/quantile v0.0.1
 	github.com/libp2p/go-buffer-pool v0.1.0
 	github.com/libp2p/go-libp2p v0.22.0
@@ -142,6 +143,7 @@ require (
 	github.com/whyrusleeping/ledger-filecoin-go v0.9.1-0.20201010031517-c3dcc1bddce4
 	github.com/whyrusleeping/multiaddr-filter v0.0.0-20160516205228-e903e4adabd7
 	github.com/xorcare/golden v0.6.1-0.20191112154924-b87f686d7542
+	github.com/zhuaiballl/homohash v0.0.0-20230807013352-2db84f56bfa2
 	go.opencensus.io v0.23.0
 	go.opentelemetry.io/otel v1.7.0
 	go.opentelemetry.io/otel/bridge/opencensus v0.25.0
@@ -247,7 +249,6 @@ require (
 	github.com/kilic/bls12-381 v0.0.0-20200820230200-6b2c19996391 // indirect
 	github.com/klauspost/compress v1.15.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
-	github.com/klauspost/reedsolomon v1.11.8 // indirect
 	github.com/koron/go-ssdp v0.0.3 // indirect
 	github.com/libp2p/go-cidranger v1.1.0 // indirect
 	github.com/libp2p/go-flow-metrics v0.1.0 // indirect
