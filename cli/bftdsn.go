@@ -227,7 +227,7 @@ var BftDsnDealCmd = &cli.Command{
 			if err != nil {
 				return err
 			}
-			// TODO: send shards[i] to m
+			// send shards[i] to m
 			ref := &storagemarket.DataRef{
 				TransferType: storagemarket.TTGraphsync,
 				Root:         c.Root, //cid
