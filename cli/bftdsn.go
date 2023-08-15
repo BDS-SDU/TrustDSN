@@ -214,7 +214,7 @@ var BftDsnDealCmd = &cli.Command{
 			return err
 		}
 
-		dir, file := filepath.Split(path)
+		dir, file := filepath.Split(absPath)
 		for i := 0; i < dataShards+parShards; i++ {
 			outfn := fmt.Sprintf("%s.%d", file, i)
 			pathI := filepath.Join(dir, outfn)
