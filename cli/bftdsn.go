@@ -151,8 +151,9 @@ var BftDsnDecodeCmd = &cli.Command{
 }
 
 var BftDsnDealCmd = &cli.Command{
-	Name:  "deal",
-	Usage: "Make BFT-DSN deals",
+	Name:      "deal",
+	Usage:     "Make BFT-DSN deals",
+	ArgsUsage: "[inputPath]",
 	Flags: []cli.Flag{
 		&cli.IntFlag{
 			Name:  "k",
