@@ -154,10 +154,6 @@ var BftDsnDealCmd = &cli.Command{
 	Name:  "deal",
 	Usage: "Make BFT-DSN deals",
 	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:  "loc",
-			Usage: "specify location of file to make deal",
-		},
 		&cli.IntFlag{
 			Name:  "k",
 			Value: 10,
@@ -174,7 +170,11 @@ var BftDsnDealCmd = &cli.Command{
 		parShards := cctx.Int("m")
 
 		// prepare chunks
-		path := cctx.String("loc")
+		if cctx.NArg() != 1 {
+			return IncorrectNumArgs(cctx)
+		}
+
+		path := cctx.Args().First()
 		absPath, err := filepath.Abs(path)
 		if err != nil {
 			return err
