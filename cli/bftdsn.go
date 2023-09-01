@@ -2,12 +2,15 @@ package cli
 
 import (
 	"fmt"
+	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/go-state-types/big"
 	lapi "github.com/filecoin-project/lotus/api"
+	"github.com/ipfs/go-cid"
 	"github.com/klauspost/reedsolomon"
 	"github.com/urfave/cli/v2"
 	"github.com/zhuaiballl/homohash"
+	"golang.org/x/xerrors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -21,6 +24,7 @@ var BftDsnCmd = &cli.Command{
 		BftDsnEncodeCmd,
 		BftDsnDecodeCmd,
 		BftDsnDealCmd,
+		BftDsnRetrieveCmd,
 	},
 }
 
@@ -252,6 +256,185 @@ var BftDsnDealCmd = &cli.Command{
 
 		}
 
+		return nil
+	},
+}
+
+var BftDsnRetrieveCmd = &cli.Command{
+	Name:        "retrieve",
+	Usage:       "Make BFT-DSN retrieval deals",
+	ArgsUsage:   "[inputPath outPath]",
+	Description: "",
+	Flags: []cli.Flag{
+		&cli.IntFlag{
+			Name:  "k",
+			Value: 10,
+			Usage: "parameter K of RS code",
+		},
+		&cli.IntFlag{
+			Name:  "m",
+			Value: 3,
+			Usage: "parameter M of RS code",
+		},
+	},
+	Action: func(cctx *cli.Context) error {
+		dataShards := cctx.Int("k")
+		parShards := cctx.Int("m")
+
+		// prepare chunks
+		if cctx.NArg() != 2 {
+			return IncorrectNumArgs(cctx)
+		}
+
+		path := cctx.Args().First()
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return err
+		}
+		err = encodeWithPath(absPath, dataShards, parShards)
+		if err != nil {
+			return err
+		}
+
+		// make deal
+		api, closer, err := GetFullNodeAPI(cctx)
+		if err != nil {
+			return err
+		}
+		defer closer()
+
+		ctx := ReqContext(cctx)
+		afmt := NewAppFmt(cctx.App)
+		wa, err := api.WalletDefaultAddress(ctx)
+		if err != nil {
+			return err
+		}
+
+		ts, err := LoadTipSet(ctx, cctx, api)
+		if err != nil {
+			return err
+		}
+
+		miners, err := api.StateListMiners(ctx, ts.Key())
+		if err != nil {
+			return err
+		}
+		n := len(miners)
+
+		//encoder, err := GetCidEncoder(cctx)
+		//if err != nil {
+		//	return err
+		//}
+
+		// prepare cid list
+		cids := make([]cid.Cid, dataShards+parShards)
+		dir, file := filepath.Split(absPath)
+		for i := 0; i < dataShards+parShards; i++ {
+			outfn := fmt.Sprintf("%s.%d", file, i)
+			pathI := filepath.Join(dir, outfn)
+
+			fileRef := lapi.FileRef{
+				Path:  pathI,
+				IsCAR: false, //cctx.Bool("car"),
+			}
+			c, err := api.ClientImport(ctx, fileRef)
+			if err != nil {
+				return err
+			}
+			// c.Root is the cid
+			cids[i] = c.Root
+		}
+		afmt.Println("CID list obtained.")
+
+		fapi, fcloser, err := GetFullNodeAPIV1(cctx)
+		if err != nil {
+			return err
+		}
+		defer fcloser()
+		for i := 0; i < dataShards+parShards; i++ {
+			shardcid := cids[i]
+			var eref *lapi.ExportRef
+			var offer lapi.QueryOffer
+			minerAddr := miners[i%n]
+			offer, err = fapi.ClientMinerQueryOffer(ctx, minerAddr, shardcid, nil)
+			if err != nil {
+				return err
+			}
+			if offer.Err != "" {
+				return fmt.Errorf("offer error: %s", offer.Err)
+			}
+
+			o := offer.Order(wa)
+
+			subscribeEvents, err := fapi.ClientGetRetrievalUpdates(ctx)
+			if err != nil {
+				return xerrors.Errorf("error setting up retrieval updates: %w", err)
+			}
+			retrievalRes, err := fapi.ClientRetrieve(ctx, o)
+			if err != nil {
+				return xerrors.Errorf("error setting up retrieval: %w", err)
+			}
+
+		readEvents:
+			for {
+				var evt lapi.RetrievalInfo
+				select {
+				case <-ctx.Done():
+					return xerrors.New("Retrieval Timed Out")
+				case evt = <-subscribeEvents:
+					if evt.ID != retrievalRes.DealID {
+						// we can't check the deal ID ahead of time because:
+						// 1. We need to subscribe before retrieving.
+						// 2. We won't know the deal ID until after retrieving.
+						continue
+					}
+				}
+
+				//event := "New"
+				//if evt.Event != nil {
+				//	event = retrievalmarket.ClientEvents[*evt.Event]
+				//}
+				//
+				//printf("Recv %s, Paid %s, %s (%s), %s\n",
+				//	types.SizeStr(types.NewInt(evt.BytesReceived)),
+				//	types.FIL(evt.TotalPaid),
+				//	strings.TrimPrefix(event, "ClientEvent"),
+				//	strings.TrimPrefix(retrievalmarket.DealStatuses[evt.Status], "DealStatus"),
+				//	time.Now().Sub(start).Truncate(time.Millisecond),
+				//)
+
+				switch evt.Status {
+				case retrievalmarket.DealStatusCompleted:
+					break readEvents
+				case retrievalmarket.DealStatusRejected:
+					return xerrors.Errorf("Retrieval Proposal Rejected: %s", evt.Message)
+				case retrievalmarket.DealStatusCancelled:
+					return xerrors.Errorf("Retrieval Proposal Cancelled: %s", evt.Message)
+				case
+					retrievalmarket.DealStatusDealNotFound,
+					retrievalmarket.DealStatusErrored:
+					return xerrors.Errorf("Retrieval Error: %s", evt.Message)
+				}
+			}
+
+			eref = &lapi.ExportRef{
+				Root:   shardcid,
+				DealID: retrievalRes.DealID,
+			}
+			if eref == nil {
+				return xerrors.Errorf("failed to find providers")
+			}
+
+			err = fapi.ClientExport(ctx, *eref, lapi.FileRef{
+				Path:  fmt.Sprintf("%s.%d", cctx.Args().Get(1), i),
+				IsCAR: false,
+			})
+			if err != nil {
+				return err
+			}
+			afmt.Println("Success")
+
+		}
 		return nil
 	},
 }
