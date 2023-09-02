@@ -14,6 +14,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 var BftDsnCmd = &cli.Command{
@@ -142,6 +143,8 @@ var BftDsnDealCmd = &cli.Command{
 		if err != nil {
 			return err
 		}
+		beginTime := time.Now()
+		fmt.Println("Start preparing deals")
 		err = encodeWithPath(absPath, dataShards, parShards)
 		if err != nil {
 			return err
@@ -211,9 +214,8 @@ var BftDsnDealCmd = &cli.Command{
 				return err
 			}
 			afmt.Println("Transaction", i, encoder.Encode(*proposal))
-
 		}
-
+		fmt.Println("Deals all sent. Took", time.Now().Sub(beginTime).Truncate(time.Millisecond))
 		return nil
 	},
 }
@@ -321,6 +323,8 @@ var BftDsnRetrieveCmd = &cli.Command{
 			return err
 		}
 		defer fcloser()
+		beginTime := time.Now()
+		afmt.Println("Retrieve begins")
 		for i := 0; i < dataShards+parShards; i++ {
 			shardcid := cids[i]
 			var eref *lapi.ExportRef
@@ -404,7 +408,7 @@ var BftDsnRetrieveCmd = &cli.Command{
 			}
 			afmt.Println("Successfully retrieved one chunk")
 		}
-		afmt.Println("Chunks retrieved")
+		afmt.Println("Chunks retrieved. Took", time.Now().Sub(beginTime).Truncate(time.Millisecond))
 
 		// decode and get the output file
 		err = decodeWithPath(outpath, outpath, dataShards, parShards)
@@ -490,10 +494,13 @@ func encode(f []byte, dataShards, parShards int) ([][]byte, error) {
 	fmt.Println()
 
 	// Encode parity
+	fmt.Println("Encode begins")
+	beginTime := time.Now()
 	err = enc.Encode(shards)
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("Encode finished. Took", time.Now().Sub(beginTime).Truncate(time.Millisecond))
 
 	fmt.Println("Hashes of encoded shards: ")
 	for _, shard := range shards {
@@ -541,6 +548,8 @@ func decode(f *os.File, shards [][]byte, dataShards, parShards int) error {
 		return err
 	}
 
+	fmt.Println("Decode begins")
+	beginTime := time.Now()
 	// Verify the shards
 	ok, err := enc.Verify(shards)
 	if ok {
@@ -563,6 +572,7 @@ func decode(f *os.File, shards [][]byte, dataShards, parShards int) error {
 	if err != nil {
 		return err
 	}
+	fmt.Println("Decode finished. Took", time.Now().Sub(beginTime).Truncate(time.Millisecond))
 
 	return nil
 }
