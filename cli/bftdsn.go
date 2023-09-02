@@ -234,6 +234,11 @@ var BftDsnRetrieveCmd = &cli.Command{
 			Value: 3,
 			Usage: "parameter M of RS code",
 		},
+		&cli.BoolFlag{
+			Name:  "keep-chunks",
+			Value: false,
+			Usage: "keep chunks produced during retrieval",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		dataShards := cctx.Int("k")
@@ -301,6 +306,12 @@ var BftDsnRetrieveCmd = &cli.Command{
 			}
 			// c.Root is the cid
 			cids[i] = c.Root
+			if !cctx.Bool("keep-chunks") {
+				err = os.Remove(pathI)
+				if err != nil {
+					return err
+				}
+			}
 		}
 		afmt.Println("CID list obtained.")
 
@@ -390,9 +401,12 @@ var BftDsnRetrieveCmd = &cli.Command{
 			if err != nil {
 				return err
 			}
-			afmt.Println("Success")
-
+			afmt.Println("Successfully retrieved one chunk")
 		}
+		afmt.Println("Chunks retrieved")
+
+		// TODO: decode and get the output
+
 		return nil
 	},
 }
