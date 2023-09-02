@@ -243,13 +243,14 @@ var BftDsnRetrieveCmd = &cli.Command{
 	Action: func(cctx *cli.Context) error {
 		dataShards := cctx.Int("k")
 		parShards := cctx.Int("m")
+		path := cctx.Args().First()
+		outpath := cctx.Args().Get(1)
 
 		// prepare chunks
 		if cctx.NArg() != 2 {
 			return IncorrectNumArgs(cctx)
 		}
 
-		path := cctx.Args().First()
 		absPath, err := filepath.Abs(path)
 		if err != nil {
 			return err
@@ -395,7 +396,7 @@ var BftDsnRetrieveCmd = &cli.Command{
 			}
 
 			err = fapi.ClientExport(ctx, *eref, lapi.FileRef{
-				Path:  fmt.Sprintf("%s.%d", cctx.Args().Get(1), i),
+				Path:  fmt.Sprintf("%s.%d", outpath, i),
 				IsCAR: false,
 			})
 			if err != nil {
@@ -405,7 +406,22 @@ var BftDsnRetrieveCmd = &cli.Command{
 		}
 		afmt.Println("Chunks retrieved")
 
-		// TODO: decode and get the output
+		// decode and get the output file
+		err = decodeWithPath(outpath, outpath, dataShards, parShards)
+		if err != nil {
+			return err
+		}
+		afmt.Println("Success.")
+
+		if !cctx.Bool("keep-chunks") {
+			for i := 0; i < dataShards+parShards; i++ {
+				chunkPath := fmt.Sprintf("%s.%d", outpath, i)
+				err = os.Remove(chunkPath)
+				if err != nil {
+					return err
+				}
+			}
+		}
 
 		return nil
 	},
