@@ -94,58 +94,16 @@ var BftDsnDecodeCmd = &cli.Command{
 		// Create encoding matrix
 		dataShards := cctx.Int("k")
 		parShards := cctx.Int("m")
-		enc, err := reedsolomon.New(dataShards, parShards)
-		if err != nil {
-			return err
-		}
-
-		// Create shards and load the data
 		absPath, err := filepath.Abs(cctx.Args().First())
 		if err != nil {
 			return err
 		}
-		shards := make([][]byte, dataShards+parShards)
-		for i := range shards {
-			infn := fmt.Sprintf("%s.%d", absPath, i)
-			fmt.Println("Opening", infn)
-			shards[i], err = ioutil.ReadFile(infn)
-			if err != nil {
-				fmt.Println("Error reading file", err)
-				shards[i] = nil
-			}
-		}
-
-		// Verify the shards
-		ok, err := enc.Verify(shards)
-		if ok {
-			fmt.Println("No reconstruction needed")
-		} else {
-			fmt.Println("Verification failed. Reconstructing data")
-			err = enc.Reconstruct(shards)
-			if err != nil {
-				return err
-			}
-			ok, err = enc.Verify(shards)
-			if !ok {
-				fmt.Println("Verification failed after reconstruction, data likely corrpted.")
-				return err
-			}
-		}
-
-		// Join the shards and write them
 		outFile := cctx.String("out")
 		if outFile == "" {
 			outFile = absPath
 		}
 
-		fmt.Println("Writing data to", outFile)
-		f, err := os.Create(outFile)
-		if err != nil {
-			return err
-		}
-
-		// We don't know the exact filesize. ?
-		err = enc.Join(f, shards, len(shards[0])*dataShards)
+		err = decodeWithPath(absPath, outFile, dataShards, parShards)
 		if err != nil {
 			return err
 		}
@@ -516,4 +474,65 @@ func encode(f []byte, dataShards, parShards int) ([][]byte, error) {
 	fmt.Println()
 
 	return shards, nil
+}
+
+func decodeWithPath(input, output string, dataShards, parShards int) error {
+	// Create shards and load the data
+	shards := make([][]byte, dataShards+parShards)
+	var err error
+	for i := range shards {
+		infn := fmt.Sprintf("%s.%d", input, i)
+		fmt.Println("Opening", infn)
+		shards[i], err = ioutil.ReadFile(infn)
+		if err != nil {
+			fmt.Println("Error reading file", err)
+			shards[i] = nil
+		}
+	}
+
+	// Join the shards and write them
+	f, err := os.Create(output)
+	if err != nil {
+		return err
+	}
+	fmt.Println("Writing data to", output)
+	err = decode(f, shards, dataShards, parShards)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func decode(f *os.File, shards [][]byte, dataShards, parShards int) error {
+	// Create encoding matrix
+	enc, err := reedsolomon.New(dataShards, parShards)
+	if err != nil {
+		return err
+	}
+
+	// Verify the shards
+	ok, err := enc.Verify(shards)
+	if ok {
+		fmt.Println("No reconstruction needed")
+	} else {
+		fmt.Println("Verification failed. Reconstructing data")
+		err = enc.Reconstruct(shards)
+		if err != nil {
+			return err
+		}
+		ok, err = enc.Verify(shards)
+		if !ok {
+			fmt.Println("Verification failed after reconstruction, data likely corrpted.")
+			return err
+		}
+	}
+
+	// We don't know the exact filesize. ?
+	err = enc.Join(f, shards, len(shards[0])*dataShards)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
