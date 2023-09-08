@@ -3,7 +3,9 @@ package sealing
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/ipfs/go-cid"
@@ -196,6 +198,9 @@ func (m *Sealing) handleAddPiece(ctx statemachine.Context, sector SectorInfo) er
 		return xerrors.Errorf("getting per-sector deal limit: %w", err)
 	}
 
+	f, _ := os.Create("storage_cost_sector" + strconv.Itoa(int(sector.SectorNumber)) + "_total_piece" + strconv.Itoa(len(sector.Pieces)))
+	defer f.Close()
+
 	for i, piece := range pending {
 		m.inputLk.Lock()
 		deal, ok := m.pendingPieces[piece]
@@ -272,7 +277,7 @@ func (m *Sealing) handleAddPiece(ctx statemachine.Context, sector SectorInfo) er
 			Piece:    ppi,
 			DealInfo: &deal.deal,
 		})
-		fmt.Println("AddPiece: added piece of size", float64(ppi.Size))
+		f.WriteString("AddPiece: added piece of size " + fmt.Sprint(ppi.Size) + "\n")
 	}
 	//for _, piece := range res.NewPieces {
 	//	delta += float64(piece.Piece.Size)
