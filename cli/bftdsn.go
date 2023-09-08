@@ -128,6 +128,11 @@ var BftDsnDealCmd = &cli.Command{
 			Value: 3,
 			Usage: "parameter M of RS code",
 		},
+		&cli.BoolFlag{
+			Name:  "keep-chunks",
+			Value: false,
+			Usage: "keep chunks produced during making deals",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		dataShards := cctx.Int("k")
@@ -214,6 +219,12 @@ var BftDsnDealCmd = &cli.Command{
 				return err
 			}
 			afmt.Println("Transaction", i, encoder.Encode(*proposal))
+			if !cctx.Bool("keep-chunks") {
+				err = os.Remove(pathI)
+				if err != nil {
+					return err
+				}
+			}
 		}
 		fmt.Println("Deals all sent. Took", time.Now().Sub(beginTime).Truncate(time.Millisecond))
 		return nil
