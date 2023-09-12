@@ -44,8 +44,20 @@ var BftDsnEncodeCmd = &cli.Command{
 			Value: 3,
 			Usage: "parameter M of RS-code",
 		},
+		&cli.BoolFlag{
+			Name:  "keep-chunks",
+			Value: false,
+			Usage: "keep chunks produced during making deals",
+		},
+		&cli.BoolFlag{
+			Name:  "hash",
+			Value: false,
+			Usage: "output hashes of chunks",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
+		keepChunks := cctx.Bool("keep-chunks")
+		outputHash := cctx.Bool("hash")
 		if cctx.NArg() != 1 {
 			return IncorrectNumArgs(cctx)
 		}
@@ -58,7 +70,7 @@ var BftDsnEncodeCmd = &cli.Command{
 		dataShards := cctx.Int("k")
 		parShards := cctx.Int("m")
 
-		err = encodeWithPath(absPath, dataShards, parShards)
+		err = encodeWithPath(absPath, dataShards, parShards, keepChunks, outputHash)
 		if err != nil {
 			return err
 		}
@@ -133,10 +145,16 @@ var BftDsnDealCmd = &cli.Command{
 			Value: false,
 			Usage: "keep chunks produced during making deals",
 		},
+		&cli.BoolFlag{
+			Name:  "hash",
+			Value: false,
+			Usage: "output hashes of chunks",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		dataShards := cctx.Int("k")
 		parShards := cctx.Int("m")
+		outputHash := cctx.Bool("hash")
 
 		// prepare chunks
 		if cctx.NArg() != 1 {
@@ -150,7 +168,7 @@ var BftDsnDealCmd = &cli.Command{
 		}
 		beginTime := time.Now()
 		fmt.Println("Start preparing deals")
-		err = encodeWithPath(absPath, dataShards, parShards)
+		err = encodeWithPath(absPath, dataShards, parShards, true, outputHash)
 		if err != nil {
 			return err
 		}
@@ -252,10 +270,16 @@ var BftDsnRetrieveCmd = &cli.Command{
 			Value: false,
 			Usage: "keep chunks produced during retrieval",
 		},
+		&cli.BoolFlag{
+			Name:  "hash",
+			Value: false,
+			Usage: "output hashes of chunks",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		dataShards := cctx.Int("k")
 		parShards := cctx.Int("m")
+		outputHash := cctx.Bool("hash")
 		path := cctx.Args().First()
 		outpath := cctx.Args().Get(1)
 
@@ -268,7 +292,7 @@ var BftDsnRetrieveCmd = &cli.Command{
 		if err != nil {
 			return err
 		}
-		err = encodeWithPath(absPath, dataShards, parShards)
+		err = encodeWithPath(absPath, dataShards, parShards, true, outputHash)
 		if err != nil {
 			return err
 		}
@@ -443,14 +467,14 @@ var BftDsnRetrieveCmd = &cli.Command{
 }
 
 // RSEncode with input in filepath and write shards in corresponding paths
-func encodeWithPath(path string, dataShards, parShards int) error {
+func encodeWithPath(path string, dataShards, parShards int, keepChunk, hash bool) error {
 	fmt.Println("Opening", path)
 	f, err := ioutil.ReadFile(path)
 	if err != nil {
 		return err
 	}
 
-	shards, err := encode(f, dataShards, parShards)
+	shards, err := encode(f, dataShards, parShards, hash)
 	if err != nil {
 		return err
 	}
@@ -460,10 +484,12 @@ func encodeWithPath(path string, dataShards, parShards int) error {
 	for i, shard := range shards {
 		outfn := fmt.Sprintf("%s.%d", file, i)
 
-		fmt.Println("Writing to", outfn)
-		err = ioutil.WriteFile(filepath.Join(dir, outfn), shard, 0644)
-		if err != nil {
-			return err
+		if keepChunk {
+			fmt.Println("Writing to", outfn)
+			err = ioutil.WriteFile(filepath.Join(dir, outfn), shard, 0644)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -471,7 +497,7 @@ func encodeWithPath(path string, dataShards, parShards int) error {
 }
 
 // RSEncode with input in byte array and output in byte arrays
-func encode(f []byte, dataShards, parShards int) ([][]byte, error) {
+func encode(f []byte, dataShards, parShards int, hash bool) ([][]byte, error) {
 	// Create encoding matrix
 	enc, err := reedsolomon.New(dataShards, parShards)
 	if err != nil {
@@ -494,15 +520,17 @@ func encode(f []byte, dataShards, parShards int) ([][]byte, error) {
 	}
 	fmt.Println()
 
-	err = enc.Encode(hashes)
-	if err != nil {
-		return nil, err
+	if hash {
+		err = enc.Encode(hashes)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Println("Encoded hashes: ")
+		for _, hash := range hashes {
+			fmt.Print(hash, " ")
+		}
+		fmt.Println()
 	}
-	fmt.Println("Encoded hashes: ")
-	for _, hash := range hashes {
-		fmt.Print(hash, " ")
-	}
-	fmt.Println()
 
 	// Encode parity
 	fmt.Println("Encode begins")
@@ -513,13 +541,15 @@ func encode(f []byte, dataShards, parShards int) ([][]byte, error) {
 	}
 	fmt.Println("Encode finished. Took", time.Now().Sub(beginTime).Truncate(time.Millisecond))
 
-	fmt.Println("Hashes of encoded shards: ")
-	for _, shard := range shards {
-		ho.Reset()
-		ho.Write(shard)
-		fmt.Print(ho.Sum(nil), " ")
+	if hash {
+		fmt.Println("Hashes of encoded shards: ")
+		for _, shard := range shards {
+			ho.Reset()
+			ho.Write(shard)
+			fmt.Print(ho.Sum(nil), " ")
+		}
+		fmt.Println()
 	}
-	fmt.Println()
 
 	return shards, nil
 }
