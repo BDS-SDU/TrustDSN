@@ -1,7 +1,14 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/go-state-types/big"
@@ -11,10 +18,6 @@ import (
 	"github.com/urfave/cli/v2"
 	"github.com/zhuaiballl/homohash"
 	"golang.org/x/xerrors"
-	"io/ioutil"
-	"os"
-	"path/filepath"
-	"time"
 )
 
 var BftDsnCmd = &cli.Command{
@@ -26,6 +29,7 @@ var BftDsnCmd = &cli.Command{
 		BftDsnDecodeCmd,
 		BftDsnDealCmd,
 		BftDsnRetrieveCmd,
+		BftDsnListFilesCmd,
 	},
 }
 
@@ -166,6 +170,29 @@ var BftDsnDealCmd = &cli.Command{
 		if err != nil {
 			return err
 		}
+
+		fileName := filepath.Base(absPath)
+
+		// Append the source filename to a cwd-local log to avoid mutating the
+		// original input file when cwd matches the input directory.
+		nameLog, err := os.OpenFile("filenames.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(nameLog, fileName); err != nil {
+			_ = nameLog.Close()
+			return err
+		}
+		if err := nameLog.Close(); err != nil {
+			return err
+		}
+
+		metaFile, err := os.OpenFile(fileName+"_meta", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			return err
+		}
+		defer metaFile.Close()
+
 		beginTime := time.Now()
 		fmt.Println("Start preparing deals")
 		err = encodeWithPath(absPath, dataShards, parShards, true, outputHash)
@@ -216,6 +243,9 @@ var BftDsnDealCmd = &cli.Command{
 			if err != nil {
 				return err
 			}
+			if _, err := fmt.Fprintln(metaFile, c.Root.String()); err != nil {
+				return err
+			}
 			// send shards[i] to m
 			ref := &storagemarket.DataRef{
 				TransferType: storagemarket.TTGraphsync,
@@ -245,6 +275,7 @@ var BftDsnDealCmd = &cli.Command{
 			}
 		}
 		fmt.Println("Deals all sent. Took", time.Now().Sub(beginTime).Truncate(time.Millisecond))
+		fmt.Println("You can later retrieve this file with the filename: ", fileName)
 		return nil
 	},
 }
@@ -252,7 +283,7 @@ var BftDsnDealCmd = &cli.Command{
 var BftDsnRetrieveCmd = &cli.Command{
 	Name:        "retrieve",
 	Usage:       "Make BFT-DSN retrieval deals",
-	ArgsUsage:   "[inputPath outPath]",
+	ArgsUsage:   "[fileName outPath]",
 	Description: "",
 	Flags: []cli.Flag{
 		&cli.IntFlag{
@@ -279,25 +310,48 @@ var BftDsnRetrieveCmd = &cli.Command{
 	Action: func(cctx *cli.Context) error {
 		dataShards := cctx.Int("k")
 		parShards := cctx.Int("m")
-		outputHash := cctx.Bool("hash")
-		path := cctx.Args().First()
+		fileNameArg := cctx.Args().First()
 		outpath := cctx.Args().Get(1)
 
-		// prepare chunks
 		if cctx.NArg() != 2 {
 			return IncorrectNumArgs(cctx)
 		}
 
-		absPath, err := filepath.Abs(path)
+		fileName := filepath.Base(fileNameArg)
+		metaPath := fileName + "_meta"
+
+		metaFile, err := os.Open(metaPath)
 		if err != nil {
-			return err
+			return xerrors.Errorf("open meta file %s: %w", metaPath, err)
 		}
-		err = encodeWithPath(absPath, dataShards, parShards, true, outputHash)
-		if err != nil {
-			return err
+		defer metaFile.Close()
+
+		var cids []cid.Cid
+		scanner := bufio.NewScanner(metaFile)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+
+			parsedCid, err := cid.Parse(line)
+			if err != nil {
+				return xerrors.Errorf("parse cid %q in %s: %w", line, metaPath, err)
+			}
+			cids = append(cids, parsedCid)
+		}
+		if err := scanner.Err(); err != nil {
+			return xerrors.Errorf("read meta file %s: %w", metaPath, err)
+		}
+		if len(cids) == 0 {
+			return xerrors.Errorf("no cids found in meta file %s", metaPath)
 		}
 
-		// make deal
+		expected := dataShards + parShards
+		if len(cids) != expected {
+			return xerrors.Errorf("cid count mismatch: got %d cids in %s, expected %d (k+m)", len(cids), metaPath, expected)
+		}
+
 		api, closer, err := GetFullNodeAPI(cctx)
 		if err != nil {
 			return err
@@ -321,47 +375,19 @@ var BftDsnRetrieveCmd = &cli.Command{
 			return err
 		}
 		n := len(miners)
-
-		//encoder, err := GetCidEncoder(cctx)
-		//if err != nil {
-		//	return err
-		//}
-
-		// prepare cid list
-		cids := make([]cid.Cid, dataShards+parShards)
-		dir, file := filepath.Split(absPath)
-		for i := 0; i < dataShards+parShards; i++ {
-			outfn := fmt.Sprintf("%s.%d", file, i)
-			pathI := filepath.Join(dir, outfn)
-
-			fileRef := lapi.FileRef{
-				Path:  pathI,
-				IsCAR: false, //cctx.Bool("car"),
-			}
-			c, err := api.ClientImport(ctx, fileRef)
-			if err != nil {
-				return err
-			}
-			// c.Root is the cid
-			cids[i] = c.Root
-			if !cctx.Bool("keep-chunks") {
-				err = os.Remove(pathI)
-				if err != nil {
-					return err
-				}
-			}
+		if n == 0 {
+			return xerrors.New("no miners available in current network")
 		}
-		afmt.Println("CID list obtained.")
 
 		fapi, fcloser, err := GetFullNodeAPIV1(cctx)
 		if err != nil {
 			return err
 		}
 		defer fcloser()
+
 		beginTime := time.Now()
 		afmt.Println("Retrieve begins")
-		for i := 0; i < dataShards+parShards; i++ {
-			shardcid := cids[i]
+		for i, shardcid := range cids {
 			var eref *lapi.ExportRef
 			var offer lapi.QueryOffer
 			minerAddr := miners[i%n]
@@ -392,25 +418,9 @@ var BftDsnRetrieveCmd = &cli.Command{
 					return xerrors.New("Retrieval Timed Out")
 				case evt = <-subscribeEvents:
 					if evt.ID != retrievalRes.DealID {
-						// we can't check the deal ID ahead of time because:
-						// 1. We need to subscribe before retrieving.
-						// 2. We won't know the deal ID until after retrieving.
 						continue
 					}
 				}
-
-				//event := "New"
-				//if evt.Event != nil {
-				//	event = retrievalmarket.ClientEvents[*evt.Event]
-				//}
-				//
-				//printf("Recv %s, Paid %s, %s (%s), %s\n",
-				//	types.SizeStr(types.NewInt(evt.BytesReceived)),
-				//	types.FIL(evt.TotalPaid),
-				//	strings.TrimPrefix(event, "ClientEvent"),
-				//	strings.TrimPrefix(retrievalmarket.DealStatuses[evt.Status], "DealStatus"),
-				//	time.Now().Sub(start).Truncate(time.Millisecond),
-				//)
 
 				switch evt.Status {
 				case retrievalmarket.DealStatusCompleted:
@@ -445,7 +455,6 @@ var BftDsnRetrieveCmd = &cli.Command{
 		}
 		afmt.Println("Chunks retrieved. Took", time.Now().Sub(beginTime).Truncate(time.Millisecond))
 
-		// decode and get the output file
 		err = decodeWithPath(outpath, outpath, dataShards, parShards)
 		if err != nil {
 			return err
@@ -461,6 +470,75 @@ var BftDsnRetrieveCmd = &cli.Command{
 				}
 			}
 		}
+
+		return nil
+	},
+}
+
+var BftDsnListFilesCmd = &cli.Command{
+	Name:        "list-files",
+	Usage:       "List retrievable filenames recorded in filenames.log",
+	ArgsUsage:   "",
+	Description: "Show filenames that can be used with `lotus bftdsn retrieve <fileName> <outPath>`.",
+	Flags:       []cli.Flag{},
+	Action: func(cctx *cli.Context) error {
+		logFile, err := os.Open("filenames.log")
+		if err != nil {
+			if os.IsNotExist(err) {
+				fmt.Println("============================================================")
+				fmt.Println("There are currently no retrievable files recorded in this")
+				fmt.Println("workspace.")
+				fmt.Println("============================================================")
+				fmt.Println()
+				fmt.Println("Run `lotus bftdsn deal <inputPath>` first to record filenames.")
+				return nil
+			}
+			return xerrors.Errorf("open filenames.log: %w", err)
+		}
+		defer logFile.Close()
+
+		var files []string
+		seen := make(map[string]struct{})
+
+		scanner := bufio.NewScanner(logFile)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+			if _, ok := seen[line]; ok {
+				continue
+			}
+			seen[line] = struct{}{}
+			files = append(files, line)
+		}
+		if err := scanner.Err(); err != nil {
+			return xerrors.Errorf("read filenames.log: %w", err)
+		}
+
+		if len(files) == 0 {
+			fmt.Println("============================================================")
+			fmt.Println("There are currently no retrievable files recorded in this")
+			fmt.Println("decentralized storage network.")
+			fmt.Println("============================================================")
+			fmt.Println()
+			fmt.Println("Run `lotus bftdsn deal <inputPath>` first to record filenames.")
+			return nil
+		}
+
+		fmt.Println("============================================================")
+		fmt.Println("You can retrieve files with the following filenames from")
+		fmt.Println("storage nodes:")
+		fmt.Println("============================================================")
+		fmt.Println()
+
+		for i, name := range files {
+			fmt.Printf("  %2d. %s\n", i+1, name)
+		}
+
+		fmt.Println()
+		fmt.Println("Example:")
+		fmt.Println("  lotus bftdsn retrieve <fileName> <outPath>")
 
 		return nil
 	},
