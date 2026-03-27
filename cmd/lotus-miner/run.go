@@ -197,9 +197,15 @@ var runCmd = &cli.Command{
 			"miner_info.log",
 		)
 
+		logHTTPStopper, err := startMinerLogHTTPServer("0.0.0.0:18080")
+		if err != nil {
+			return fmt.Errorf("failed to start miner log http server: %w", err)
+		}
+
 		// Monitor for shutdown.
 		finishCh := node.MonitorShutdown(shutdownChan,
 			node.ShutdownHandler{Component: "rpc server", StopFunc: rpcStopper},
+			node.ShutdownHandler{Component: "miner log http server", StopFunc: logHTTPStopper},
 			node.ShutdownHandler{Component: "miner", StopFunc: stop},
 		)
 

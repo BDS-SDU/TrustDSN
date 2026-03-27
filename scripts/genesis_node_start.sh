@@ -43,7 +43,7 @@ sleep 3
 sleep 3
 ./lotus-miner info
 
-#nohup bash scripts_FileDES/listen_and_send.sh > fund.log 2>&1 &
+nohup bash scripts/listen_and_send.sh > fund.log 2>&1 &
 
 #nohup bash scripts_FileDES/server_listen_aggregate.sh > aggregate.log 2>&1 &
 

@@ -30,6 +30,8 @@ var BftDsnCmd = &cli.Command{
 		BftDsnDealCmd,
 		BftDsnRetrieveCmd,
 		BftDsnListFilesCmd,
+		BftDsnListMinerCmd,
+		BftDsnListProofCmd,
 	},
 }
 
