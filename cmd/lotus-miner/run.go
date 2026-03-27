@@ -189,6 +189,14 @@ var runCmd = &cli.Command{
 			return fmt.Errorf("failed to start json-rpc endpoint: %s", err)
 		}
 
+		startMinerInfoMonitor(
+			ctx,
+			shutdownChan,
+			minerapi,
+			nodeApi,
+			"miner_info.log",
+		)
+
 		// Monitor for shutdown.
 		finishCh := node.MonitorShutdown(shutdownChan,
 			node.ShutdownHandler{Component: "rpc server", StopFunc: rpcStopper},
