@@ -187,14 +187,6 @@ func loadAndNormalizeMinerIPs(path string) ([]string, error) {
 		return nil, err
 	}
 
-	content := strings.Join(ordered, "\n")
-	if content != "" {
-		content += "\n"
-	}
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		return nil, err
-	}
-
 	return ordered, nil
 }
 

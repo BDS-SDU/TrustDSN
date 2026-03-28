@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import sduLogo from "../sdu_logo.png";
+import trustdsnLogo from "../trustdsn_logo_transparent.png";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8080";
 const PAGE_SIZE = 5;
@@ -221,7 +223,17 @@ export default function App() {
     <div className="app-shell">
       <header className="hero">
         <div className="hero-inner">
-          <h1 className="hero-title">TrustDSN Demo System</h1>
+          <div className="hero-brand">
+            <div className="hero-logo-frame hero-logo-frame-left">
+              <img className="hero-logo hero-logo-sdu" src={sduLogo} alt="Shandong University logo" />
+            </div>
+            <div className="hero-title-block">
+              <h1 className="hero-title">数链融合技术教育部工程研究中心——TrustDSN平台</h1>
+            </div>
+            <div className="hero-logo-frame hero-logo-frame-right">
+              <img className="hero-logo hero-logo-trustdsn" src={trustdsnLogo} alt="TrustDSN logo" />
+            </div>
+          </div>
           <div className="hero-divider" />
         </div>
       </header>
@@ -229,7 +241,7 @@ export default function App() {
       <main className="content">
         <section className="info-section">
           <div className="panel miner-panel">
-            <SectionTitle>Miner Information</SectionTitle>
+            <SectionTitle>Storage Node Information</SectionTitle>
             <div className="table-wrap">
               {minersLoading ? (
                 <div className="empty-state">Refreshing miner information...</div>
@@ -238,11 +250,11 @@ export default function App() {
               ) : (
                 <table className="info-table">
                   <colgroup>
-                    <col style={{ width: "24%" }} />
-                    <col style={{ width: "13%" }} />
-                    <col style={{ width: "19%" }} />
+                    <col style={{ width: "25%" }} />
+                    <col style={{ width: "14%" }} />
+                    <col style={{ width: "20%" }} />
+                    <col style={{ width: "20%" }} />
                     <col style={{ width: "21%" }} />
-                    <col style={{ width: "23%" }} />
                   </colgroup>
                   <thead>
                     <tr>
@@ -289,10 +301,10 @@ export default function App() {
                   <colgroup>
                     <col style={{ width: "18%" }} />
                     <col style={{ width: "17%" }} />
-                    <col style={{ width: "12%" }} />
-                    <col style={{ width: "25%" }} />
+                    <col style={{ width: "14%" }} />
+                    <col style={{ width: "24%" }} />
                     <col style={{ width: "13%" }} />
-                    <col style={{ width: "15%" }} />
+                    <col style={{ width: "14%" }} />
                   </colgroup>
                   <thead>
                     <tr>

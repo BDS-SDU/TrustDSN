@@ -16,6 +16,8 @@ rm -rf zk_output
 rm lotus.log
 rm miner.log
 rm fund.log
+rm api.log
+rm demo-web.log
 rm aggregate.log
 rm filenames.log
 
@@ -44,6 +46,11 @@ sleep 3
 ./lotus-miner info
 
 nohup bash scripts/listen_and_send.sh > fund.log 2>&1 &
+
+sleep 3
+
+nohup go run ./cmd/trustdsn-api > api.log 2>&1 &
+nohup bash -lc 'cd demo-web && npm run dev' > demo-web.log 2>&1 &
 
 #nohup bash scripts_FileDES/server_listen_aggregate.sh > aggregate.log 2>&1 &
 
