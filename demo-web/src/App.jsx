@@ -97,7 +97,7 @@ export default function App() {
   async function fetchMiners() {
     try {
       setMinersLoading(true);
-      const data = await getJSON("/api/miners");
+      const data = await getJSON("/miners");
       setMiners(data.miners || []);
     } catch (err) {
       console.error(err);
@@ -109,7 +109,7 @@ export default function App() {
   async function fetchProofs() {
     try {
       setProofsLoading(true);
-      const data = await getJSON("/api/proofs");
+      const data = await getJSON("/proofs");
       setProofs(data.proofs || []);
     } catch (err) {
       console.error(err);
@@ -122,7 +122,7 @@ export default function App() {
     try {
       setFilesLoading(true);
       setFilesMessage("");
-      const data = await getJSON("/api/files");
+      const data = await getJSON("/files");
       setFiles(data.files || []);
     } catch (err) {
       setFilesMessage(err.message);
@@ -174,7 +174,7 @@ export default function App() {
     try {
       setDealLoading(true);
       setDealMessage("Uploading...");
-      const data = await postJSON("/api/deal", {
+      const data = await postJSON("/deal", {
         file_name: dealFileName.trim(),
       });
       setDealMessage(data.message || (data.success ? "Deal finished." : "Deal failed."));
@@ -197,7 +197,7 @@ export default function App() {
     try {
       setRetrieveLoading(true);
       setRetrieveMessage("Retrieving...");
-      const data = await postJSON("/api/retrieve", {
+      const data = await postJSON("/retrieve", {
         file_name: retrieveFileName.trim(),
         output_name: retrieveOutputName.trim(),
       });
@@ -344,7 +344,7 @@ export default function App() {
 
         <section className="action-section">
           <div className="card">
-            <SectionTitle>Store File</SectionTitle>
+            <SectionTitle>File Upload</SectionTitle>
             <input
               type="text"
               placeholder="Enter file name in repo root"
@@ -354,11 +354,15 @@ export default function App() {
             <button onClick={handleDeal} disabled={dealLoading}>
               {dealLoading ? "Uploading..." : "Upload File"}
             </button>
-            <div className="message-box">{dealMessage || "Ready."}</div>
+            <div className="message-box">
+              <div className={dealMessage ? "" : "empty-state"}>
+                {dealMessage || "Ready."}
+              </div>
+            </div>
           </div>
 
           <div className="card">
-            <SectionTitle>Retrieve File</SectionTitle>
+            <SectionTitle>File Retrieval</SectionTitle>
             <input
               type="text"
               placeholder="Enter file name"
@@ -374,18 +378,22 @@ export default function App() {
             <button onClick={handleRetrieve} disabled={retrieveLoading}>
               {retrieveLoading ? "Retrieving..." : "Retrieve File"}
             </button>
-            <div className="message-box">{retrieveMessage || "Ready."}</div>
+            <div className="message-box">
+              <div className={retrieveMessage ? "" : "empty-state"}>
+                {retrieveMessage || "Ready."}
+              </div>
+            </div>
           </div>
 
           <div className="card">
-            <SectionTitle>Stored Files</SectionTitle>
+            <SectionTitle>File Infomation</SectionTitle>
             <button onClick={fetchFiles} disabled={filesLoading}>
               {filesLoading ? "Loading..." : "Show File Info"}
             </button>
             <div className="file-box">
               {files.length === 0 ? (
                 <div className="empty-state">
-                  {filesMessage || "No file information loaded."}
+                  {filesMessage || "Ready."}
                 </div>
               ) : (
                 files.map((name) => (
