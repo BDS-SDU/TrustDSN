@@ -367,6 +367,14 @@ demo-web/dist
 deploy/nginx/sites-available/trustdsn
 ```
 
+需要注意，这个样板文件中的 `root` 当前是按仓库默认路径写死的。例如：
+
+```nginx
+root /home/jiahao/go/src/TrustDSN/demo-web/dist;
+```
+
+如果你的 TrustDSN 实际部署路径不同，拷贝到系统 nginx 目录之前，需要先把它改成你自己的仓库绝对路径。
+
 当前样板默认监听8081端口，这是为了方便在本地测试时与其他系统并行打开。如果你是单独正式部署 TrustDSN，可以把样板中的：
 
 ```nginx
