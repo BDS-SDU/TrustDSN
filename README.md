@@ -18,15 +18,31 @@ It can be used both as a local multi-node experimental environment and as a clou
 
 ## 🎬 Demo
 
-<p align="center">
-  <a href="./assets/readme/TrustDSN_video.mp4"><strong>Click here to view the demo video</strong></a>
-</p>
+TrustDSN's web interface focuses on three core workflows: file information lookup, file upload, and file retrieval.
+
+### File Infomation
 
 <p align="center">
-  <video src="./assets/readme/TrustDSN_video.mp4" controls width="880"></video>
+  <img src="./assets/readme/file_infomation.gif" alt="TrustDSN file information demo" width="900">
 </p>
 
-> If your code hosting platform does not support inline video preview, click the link above or open `assets/readme/TrustDSN_video.mp4` directly.
+Query the current file list recorded by the system and inspect the files that are available for retrieval.
+
+### File Upload
+
+<p align="center">
+  <img src="./assets/readme/file_upload.gif" alt="TrustDSN file upload demo" width="900">
+</p>
+
+Upload a file stored in the repository workspace and submit a storage deal through the frontend.
+
+### File Retrieval
+
+<p align="center">
+  <img src="./assets/readme/file_retrieval.gif" alt="TrustDSN file retrieval demo" width="900">
+</p>
+
+Retrieve a stored file by name and write the reconstructed output back to the local workspace.
 
 ## ✨ Features
 
